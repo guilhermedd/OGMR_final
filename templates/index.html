@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGMR Final</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+        .card {
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+        h5 {
+            color: #0d6efd;
+        }
+        ul {
+            padding-left: 1rem;
+        }
+        li {
+            margin-bottom: 0.75rem;
+        }
+        table th, table td {
+            text-align: center;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5 fs-"">
+        <div class="text-center mb-5">
+            <h1 class="display-5 fw-bold">Status das Portas</h1>
+            <p class="text-muted">Monitoramento de bloqueios e horários</p>
+        </div>
+       <table class="table table-striped table-bordered">
+    <thead>
+        <tr>
+        <th>Ação</th>
+        <th>Porta</th>
+        <th>Status</th>
+        <th>Início</th>
+        <th>Fim</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in computadores %}
+        <tr>
+            <td>
+            {% if c[0] in mestres or c[1] == -1 %}
+            <button type="button" class="btn btn-secondary disabled">Indisponível</button>
+            {% elif c[1] == 1 %}
+            <button type="button" class="btn btn-primary">Desbloquear</button>
+            {% elif c[1] == 0 %}
+            <button type="button" class="btn btn-danger">Bloquear</button>
+            {% endif %}
+        </td>
+        <td>
+            {{ c[0] }}
+        </td>
+        <td>
+            {% if c[1] == 1 %}
+            <span class="text-danger">Bloqueado</span>
+            {% elif c[1] == 0 %}
+            <span class="text-success">Livre</span>
+            {% else %}
+            <span class="text-secondary">Offline</span>
+            {% endif %}
+        </td>
+        <td>{{ c[2] if c[2] else '—' }}</td>
+        <td>{{ c[3] if c[3] else '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    </table>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

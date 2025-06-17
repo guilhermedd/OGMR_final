@@ -1,0 +1,28 @@
+CREATE TABLE computadores(
+    porta INTEGER PRIMARY KEY,
+    block INTEGER NOT NULL,
+    inicio TIMESTAMP,
+    fim TIMESTAMP
+);
+
+CREATE TABLE mestres(
+    porta INTEGER PRIMARY KEY
+);
+
+--------- Popular
+
+INSERT INTO computadores (porta, block, inicio, fim) VALUES
+(10, 1, '2025-06-17 08:00:00', '2025-06-17 09:00:00'),
+(11, 0, NULL, NULL),
+(12, 1, '2025-06-17 10:00:00', '2025-06-17 11:30:00'),
+(13, 0, NULL, NULL),
+(14, 1, '2025-06-17 15:00:00', '2025-06-17 17:00:00'),
+(15, 1, '2025-06-18 08:00:00', '2025-06-18 10:00:00'),
+(16, 0, NULL, NULL),
+(17, 1, '2025-06-19 09:15:00', '2025-06-19 10:45:00');
+
+---------
+
+INSERT INTO mestres (porta) VALUES
+(10),
+(11);
