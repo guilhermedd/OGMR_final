@@ -1,0 +1,24 @@
+<!-- bloquear.html -->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Bloquear Porta</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container py-5">
+    <h2 class="mb-4">Definir Horário de Bloqueio</h2>
+    <form method="POST" action="/bloquear">
+        <input type="hidden" name="porta" value="{{ porta }}">
+        <div class="mb-3">
+            <label for="inicio" class="form-label">Hora de Início:</label>
+            <input type="datetime-local" id="inicio" name="inicio" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="fim" class="form-label">Hora de Fim:</label>
+            <input type="datetime-local" id="fim" name="fim" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-danger">Confirmar Bloqueio</button>
+    </form>
+</body>
+</html>

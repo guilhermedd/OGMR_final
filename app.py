@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect
 from dotenv import load_dotenv
 import os
 import psycopg2
@@ -8,7 +8,7 @@ import threading
 
 load_dotenv()
 
-INTERVALO = 10  # segundos
+INTERVALO = 1  # segundos
 
 app = Flask(__name__)
 
@@ -52,12 +52,86 @@ def atualizar_block_periodicamente():
             conn.commit()
             cursor.close()
             conn.close()
-            print(f"[{agora.strftime('%Y-%m-%d %H:%M:%S')}] Atualização feita.")
         except Exception as e:
             print(f"Erro ao atualizar: {e}")
         time.sleep(INTERVALO)
 
+def bloquear_porta(porta, inicio, fim):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE computadores
+        SET inicio = %s, fim = %s
+        WHERE porta = %s
+    """, (inicio, fim, porta))
+    conn.commit()
+    cursor.close()
+    conn.close()
 
+def bloquear_todas_portas(inicio, fim):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE computadores
+        SET inicio = %s, fim = %s
+        WHERE porta NOT IN (SELECT porta FROM mestres)
+    """, (inicio, fim))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def desbloquear_todas_portas():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE computadores
+        SET inicio = NULL, fim = NULL, block = 0
+        WHERE porta NOT IN (SELECT porta FROM mestres)
+    """)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+@app.route('/desbloquear_todos', methods=['GET', 'POST'])
+def desbloquear_todos():
+    desbloquear_todas_portas()
+    return redirect('/')
+
+@app.route('/bloquear', methods=['GET', 'POST'])
+def bloquear():
+    if request.method == 'POST':
+        porta = request.form['porta']
+        inicio = request.form['inicio']
+        fim = request.form['fim']
+        bloquear_porta(porta, inicio, fim)
+        return redirect('/')  # Redireciona para a página principal
+    else:
+        porta = request.args.get('porta')
+        return render_template('bloquear.html', porta=porta)
+    
+@app.route('/bloquear_todos', methods=['GET', 'POST'])
+def bloquear_todos():
+    if request.method == 'POST':
+        inicio = request.form['inicio']
+        fim = request.form['fim']
+        bloquear_todas_portas(inicio, fim)
+        return redirect('/')
+    return render_template('bloquear_todos.html')
+
+@app.route('/desbloquear', methods=['POST'])
+def desbloquear():
+    porta = request.form['porta']
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE computadores
+        SET inicio = NULL, fim = NULL, block = 0
+        WHERE porta = %s
+    """, (porta,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return redirect('/')
 
 @app.route("/")
 def index():
