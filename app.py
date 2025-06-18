@@ -4,13 +4,20 @@ import os
 import psycopg2
 from datetime import datetime
 import time
-import threading
+from multiprocessing import Process
 
 load_dotenv()
 
-INTERVALO = 1  # segundos
+INTERVALO = 1  # segundo(s)
 
 app = Flask(__name__)
+
+def obter_ip_cliente():
+    if request.headers.getlist("X-Forwarded-For"):
+        ip = request.headers.getlist("X-Forwarded-For")[0].split(',')[0]
+    else:
+        ip = request.remote_addr
+    return ip
 
 def get_connection():
     return psycopg2.connect(
@@ -29,20 +36,20 @@ def select_query(connection, query):
     return results
 
 def atualizar_block_periodicamente():
+    print(f"Verificando bloqueios...")
     while True:
         try:
             agora = datetime.now()
+
             conn = get_connection()
             cursor = conn.cursor()
 
-            # BLOQUEAR se estamos dentro do intervalo (inicio <= agora < fim)
             cursor.execute("""
                 UPDATE computadores
                 SET block = 1
                 WHERE inicio <= %s AND fim > %s
             """, (agora, agora))
 
-            # DESBLOQUEAR se já passou do fim
             cursor.execute("""
                 UPDATE computadores
                 SET block = 0
@@ -52,8 +59,10 @@ def atualizar_block_periodicamente():
             conn.commit()
             cursor.close()
             conn.close()
+
         except Exception as e:
-            print(f"Erro ao atualizar: {e}")
+            print(f"❌ Erro ao atualizar: {e}")
+
         time.sleep(INTERVALO)
 
 def bloquear_porta(porta, inicio, fim):
@@ -135,6 +144,14 @@ def desbloquear():
 
 @app.route("/")
 def index():
+    ip_cliente = obter_ip_cliente()
+    
+    with open("professores.txt") as f:
+        ips_permitidos = [linha.strip() for linha in f if linha.strip()]
+
+    if ip_cliente not in ips_permitidos:
+        return render_template("proibido.html"), 403
+
     conn = get_connection()
     query = "SELECT porta, block, inicio, fim FROM computadores ORDER BY porta"
     computadores = select_query(conn, query)
@@ -152,7 +169,11 @@ def index():
         mestres=[m[0] for m in mestres]
     )
 
+
+
 if __name__ == "__main__":
-    thread = threading.Thread(target=atualizar_block_periodicamente, daemon=True)
-    thread.start()
-    app.run(debug=True)
+    processo = Process(target=atualizar_block_periodicamente)
+    processo.daemon = True
+    processo.start()
+    app.run(debug=True, host='0.0.0.0')
+

@@ -51,8 +51,3 @@ INSERT INTO computadores (porta, block, inicio, fim) VALUES
 (17, 1, NULL, NULL);
 
 ---------
-
-
-
-while True:
-    SELECT * FROM computadores WHERE block = 1;
