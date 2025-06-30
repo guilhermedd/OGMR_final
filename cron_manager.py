@@ -1,5 +1,7 @@
 from crontab import CronTab
 import os
+from datetime import datetime
+
 
 # Caminho absoluto para o interpretador Python e para o script
 # Isso garante que o cron execute o script corretamente
@@ -10,7 +12,7 @@ def _get_comment_id(porta, acao):
     """Cria um identificador único para o comentário do job no cron."""
     return f"SWITCH_MGMT_{porta}_{acao.upper()}"
 
-def agendar_tarefa(dt_execucao, porta, acao):
+def agendar_tarefa(dt_execucao, porta, acao, fim=datetime.now()):
     """
     Agenda um novo job no crontab do usuário que está executando o Flask.
     
@@ -25,7 +27,7 @@ def agendar_tarefa(dt_execucao, porta, acao):
     comment_id = _get_comment_id(porta, acao)
     
     # Monta o comando que o cron irá executar
-    comando = f'{PYTHON_PATH} {SCRIPT_PATH} {porta} {acao}'
+    comando = f'{PYTHON_PATH} {SCRIPT_PATH} {porta} {acao} {fim}'
     
     job = cron.new(command=comando, comment=comment_id)
     
@@ -48,3 +50,14 @@ def remover_tarefa(porta, acao):
     
     cron.write()
     print(f"Tarefa removida: {comment_id}")
+
+def remove_all():
+    """Remove todas as tarefas agendadas pela aplicação (comentário SWITCH_MGMT_*)."""
+    cron = CronTab(user=True)
+    jobs_removidos = 0
+    for job in cron:
+        if job.comment.startswith('SWITCH_MGMT_'):
+            cron.remove(job)
+            jobs_removidos += 1
+    cron.write()
+    print(f"{jobs_removidos} tarefas agendadas foram removidas.")

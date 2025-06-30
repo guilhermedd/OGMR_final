@@ -4,6 +4,7 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from datetime import datetime
+from cron_manager import remover_tarefa
 
 # Carrega variáveis de ambiente do .env
 load_dotenv() 
@@ -24,7 +25,7 @@ def get_connection():
         port=os.getenv("DB_PORT")
     ) 
 
-def atualizar_status_no_banco(porta, acao):
+def atualizar_status_no_banco(porta, acao, fim):
     """Atualiza o campo 'block' e os horários no banco conforme a ação.""" 
     try:
         conn = get_connection() 
@@ -34,7 +35,7 @@ def atualizar_status_no_banco(porta, acao):
                 UPDATE computadores
                 SET block = 1, inicio = %s, fim = %s
                 WHERE porta = %s
-            """, (datetime.now(), datetime.now(), porta)) 
+            """, (datetime.now().strftime("%Y-%m-%d %H:%M"), fim, porta)) 
         elif acao == "liberar":
             cursor.execute("""
                 UPDATE computadores
@@ -48,7 +49,7 @@ def atualizar_status_no_banco(porta, acao):
     except Exception as e:
         print(f"ERRO ao atualizar o banco para porta {porta}: {e}") 
 
-def gerenciar_porta(porta, acao):
+def gerenciar_porta(porta, acao, fim=datetime.now().strftime("%Y-%m-%d %H:%M")):
     if acao == "bloquear":
         snmp_valor = "2" 
     elif acao == "liberar":
@@ -62,7 +63,9 @@ def gerenciar_porta(porta, acao):
         "snmpset", "-v2c", "-c", COMMUNITY_WRITE,
         SWITCH_IP, oid_completo, "i", snmp_valor
     ] 
-    atualizar_status_no_banco(porta, acao)
+    atualizar_status_no_banco(porta, acao, fim=fim)
+    remover_tarefa(porta, acao)
+    print("Executando comando:", " ".join(comando))
     try:
         subprocess.run(comando, check=True, capture_output=True) 
         print(f"SUCESSO: Porta {porta} ação '{acao}' executada.") 
@@ -70,8 +73,8 @@ def gerenciar_porta(porta, acao):
         print(f"ERRO ao executar para porta {porta}: {e.stderr.decode().strip()}") 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Uso: python gerencia_switch.py <porta> <bloquear|liberar>") 
+    if len(sys.argv) != 4:
+        print("Uso: python gerencia_switch.py <porta> <bloquear|liberar> <fim: 'YYYY-MM-DD HH:MM'>") 
         sys.exit(1) 
 
     try:
@@ -80,5 +83,13 @@ if __name__ == "__main__":
         print("Porta deve ser um número inteiro.") 
         sys.exit(1) 
 
-    acao_arg = sys.argv[2].lower() 
-    gerenciar_porta(porta_arg, acao_arg) 
+    acao_arg = sys.argv[2].lower()
+
+    try:
+        fim_arg = datetime.strptime(sys.argv[3], "%Y-%m-%d %H:%M")
+    except ValueError:
+        print("Formato de data inválido. Use: 'YYYY-MM-DD HH:MM'")
+        sys.exit(1)
+
+    gerenciar_porta(porta_arg, acao_arg, fim=fim_arg)
+

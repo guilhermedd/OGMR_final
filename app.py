@@ -4,9 +4,7 @@ import os
 import psycopg2
 from datetime import datetime
 import cron_manager
-from concurrent.futures import ThreadPoolExecutor
 import subprocess
-import asyncio
 
 load_dotenv()
 
@@ -37,14 +35,16 @@ def select_query(connection, query):
     cursor.close()
     return results
 
-def executar_comando_imediato(porta, acao):
+def executar_comando_imediato(porta, acao, fim=None):
     """Executa o script de gerenciamento do switch imediatamente."""
+    if fim is None:
+        fim = datetime.now().strftime("%Y-%m-%d %H:%M")
     try:
         # Usa os mesmos caminhos que o cron_manager para consistência
         python_path = os.sys.executable
         script_path = os.path.abspath("gerencia_switch.py")
         
-        comando = [python_path, script_path, str(porta), acao]
+        comando = [python_path, script_path, str(porta), acao, fim]
         
         print(f"Executando comando imediato: {' '.join(comando)}")
         
@@ -61,23 +61,40 @@ def executar_comando_imediato(porta, acao):
 # --- LÓGICA DE NEGÓCIO ---
 
 def bloquear_porta(porta, inicio, fim):
+    if isinstance(inicio, str):
+        inicio = inicio.replace('T', ' ')
+        dt_inicio = datetime.strptime(inicio, "%Y-%m-%d %H:%M")
+    else:
+        dt_inicio = inicio
+
+    if isinstance(fim, str):
+        fim = fim.replace('T', ' ')
+        dt_fim = datetime.strptime(fim, "%Y-%m-%d %H:%M")
+    else:
+        dt_fim = fim
+
+    inicio_str = dt_inicio.strftime("%Y-%m-%d %H:%M")
+    fim_str = dt_fim.strftime("%Y-%m-%d %H:%M")
+
     conn = get_connection()
     cursor = conn.cursor()
+    block = 1 if dt_inicio < datetime.now() else 0
     cursor.execute("""
         UPDATE computadores
-        SET inicio = %s, fim = %s, block = 1
+        SET inicio = %s, fim = %s, block = %s
         WHERE porta = %s
-    """, (inicio, fim, porta))
+    """, (inicio_str, fim_str, block, porta))
     conn.commit()
     cursor.close()
     conn.close()
 
-    dt_inicio = datetime.fromisoformat(inicio)
-    dt_fim = datetime.fromisoformat(fim)
-    if inicio > datetime.now().isoformat():
-        executar_comando_imediato(porta, 'bloquear')
+    # Compara datas
+    if dt_inicio < datetime.now():
+        print(f"Comando ja começou? {dt_inicio < datetime.now()} | {dt_inicio} < {datetime.now()}")
+        print(f"Executando bloqueio imediato da porta {porta} para {dt_inicio} e desbloqueio para {dt_fim} | agora {datetime.now()}")
+        executar_comando_imediato(porta, 'bloquear', fim=dt_fim)
     else:
-        cron_manager.agendar_tarefa(dt_inicio, porta, 'bloquear')
+        cron_manager.agendar_tarefa(dt_inicio, porta, 'bloquear', dt_fim)
     cron_manager.agendar_tarefa(dt_fim, porta, 'liberar')
 
 
@@ -88,60 +105,38 @@ def desbloquear_porta(porta):
     print(f"Iniciando processo de DESBLOQUEIO IMEDIATO para a porta {porta}...")
 
     cron_manager.remover_tarefa(porta, 'liberar')
+    cron_manager.remover_tarefa(porta, 'bloquear')
     executar_comando_imediato(porta, 'liberar')
 
-    # conn = get_connection()
-    # cursor = conn.cursor()
-    # cursor.execute("""
-    #     UPDATE computadores
-    #     SET inicio = NULL, fim = NULL, block = 0
-    #     WHERE porta = %s
-    # """, (porta,))
-    # conn.commit()
-    # cursor.close()
-    # conn.close()
-    
     print(f"Processo de desbloqueio para a porta {porta} finalizado.")
 
 
-def obter_portas_afetadas():
+def obter_portas_afetadas(blocked=False):
     """Função auxiliar para obter a lista de portas a serem alteradas."""
     conn = get_connection()
-    portas_raw = select_query(conn, "SELECT porta FROM computadores WHERE porta NOT IN (SELECT porta FROM mestres)")
+    if blocked:
+        portas_raw = select_query(conn, "SELECT porta FROM computadores WHERE block = 1")
+    else:
+        portas_raw = select_query(conn, "SELECT porta FROM computadores WHERE porta NOT IN (SELECT porta FROM mestres)")
     conn.close()
     return [p[0] for p in portas_raw]
 
 
 def bloquear_todas_portas(inicio, fim):
     portas_para_bloquear = obter_portas_afetadas() 
-
-    # Atualiza tudo de uma vez no banco 
-    # conn = get_connection() 
-    # cursor = conn.cursor() 
-    # cursor.execute("""
-    #     UPDATE computadores
-    #     SET inicio = %s, fim = %s, block = 1
-    #     WHERE porta = ANY(%s)
-    # """, (inicio, fim, portas_para_bloquear)) 
-    # conn.commit() 
-    # cursor.close()
-    # conn.close() 
-
-    dt_inicio = datetime.fromisoformat(inicio) 
-    dt_fim = datetime.fromisoformat(fim) 
+    cron_manager.remove_all()
     
     for porta in portas_para_bloquear:
-        cron_manager.remover_tarefa(porta, 'bloquear') 
-        cron_manager.remover_tarefa(porta, 'liberar')
-        cron_manager.agendar_tarefa(dt_inicio, porta, 'bloquear') 
-        cron_manager.agendar_tarefa(dt_fim, porta, 'liberar') 
+        bloquear_porta(porta, inicio, fim)
 
 
 def desbloquear_todas_portas():
-    portas = obter_portas_afetadas()
+    portas = obter_portas_afetadas(blocked=True)
 
     for porta in portas:
         desbloquear_porta(porta)
+        
+        
 # --- ROTAS FLASK (sem alterações necessárias no corpo das rotas) ---
 
 @app.route('/desbloquear_todos', methods=['GET', 'POST'])
