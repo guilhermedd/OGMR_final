@@ -1,4 +1,4 @@
-#!/home/guiddiel/OGMR_final/venv/bin/python3
+#!/home/diel/Udesc/OGMR_final/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

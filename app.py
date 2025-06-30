@@ -3,14 +3,16 @@ from dotenv import load_dotenv
 import os
 import psycopg2
 from datetime import datetime
-import time
-from multiprocessing import Process
+import cron_manager
+from concurrent.futures import ThreadPoolExecutor
+import subprocess
+import asyncio
 
 load_dotenv()
 
-INTERVALO = 1  # segundo(s)
-
 app = Flask(__name__)
+
+# --- COMANDOS UTEIS ---
 
 def obter_ip_cliente():
     if request.headers.getlist("X-Forwarded-For"):
@@ -35,71 +37,112 @@ def select_query(connection, query):
     cursor.close()
     return results
 
-def atualizar_block_periodicamente():
-    print(f"Verificando bloqueios...")
-    while True:
-        try:
-            agora = datetime.now()
+def executar_comando_imediato(porta, acao):
+    """Executa o script de gerenciamento do switch imediatamente."""
+    try:
+        # Usa os mesmos caminhos que o cron_manager para consistência
+        python_path = os.sys.executable
+        script_path = os.path.abspath("gerencia_switch.py")
+        
+        comando = [python_path, script_path, str(porta), acao]
+        
+        print(f"Executando comando imediato: {' '.join(comando)}")
+        
+        # Usamos subprocess.run para executar o comando
+        subprocess.run(comando, check=True, timeout=10) # Timeout de 10s
+        
+        print(f"Comando imediato para porta {porta} executado com sucesso.")
+        return True
+    except Exception as e:
+        print(f"ERRO na execução imediata para porta {porta}: {e}")
+        return False
 
-            conn = get_connection()
-            cursor = conn.cursor()
 
-            cursor.execute("""
-                UPDATE computadores
-                SET block = 1
-                WHERE inicio <= %s AND fim > %s
-            """, (agora, agora))
-
-            cursor.execute("""
-                UPDATE computadores
-                SET block = 0
-                WHERE fim < %s AND block = 1
-            """, (agora,))
-
-            conn.commit()
-            cursor.close()
-            conn.close()
-
-        except Exception as e:
-            print(f"❌ Erro ao atualizar: {e}")
-
-        time.sleep(INTERVALO)
+# --- LÓGICA DE NEGÓCIO ---
 
 def bloquear_porta(porta, inicio, fim):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE computadores
-        SET inicio = %s, fim = %s
+        SET inicio = %s, fim = %s, block = 1
         WHERE porta = %s
     """, (inicio, fim, porta))
     conn.commit()
     cursor.close()
     conn.close()
 
-def bloquear_todas_portas(inicio, fim):
+    dt_inicio = datetime.fromisoformat(inicio)
+    dt_fim = datetime.fromisoformat(fim)
+    if inicio > datetime.now().isoformat():
+        executar_comando_imediato(porta, 'bloquear')
+    else:
+        cron_manager.agendar_tarefa(dt_inicio, porta, 'bloquear')
+    cron_manager.agendar_tarefa(dt_fim, porta, 'liberar')
+
+
+def desbloquear_porta(porta):
+    """
+    Lógica de desbloqueio completamente refeita para ser IMEDIATA.
+    """
+    print(f"Iniciando processo de DESBLOQUEIO IMEDIATO para a porta {porta}...")
+
+    cron_manager.remover_tarefa(porta, 'liberar')
+    executar_comando_imediato(porta, 'liberar')
+
+    # conn = get_connection()
+    # cursor = conn.cursor()
+    # cursor.execute("""
+    #     UPDATE computadores
+    #     SET inicio = NULL, fim = NULL, block = 0
+    #     WHERE porta = %s
+    # """, (porta,))
+    # conn.commit()
+    # cursor.close()
+    # conn.close()
+    
+    print(f"Processo de desbloqueio para a porta {porta} finalizado.")
+
+
+def obter_portas_afetadas():
+    """Função auxiliar para obter a lista de portas a serem alteradas."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE computadores
-        SET inicio = %s, fim = %s
-        WHERE porta NOT IN (SELECT porta FROM mestres)
-    """, (inicio, fim))
-    conn.commit()
-    cursor.close()
+    portas_raw = select_query(conn, "SELECT porta FROM computadores WHERE porta NOT IN (SELECT porta FROM mestres)")
     conn.close()
+    return [p[0] for p in portas_raw]
+
+
+def bloquear_todas_portas(inicio, fim):
+    portas_para_bloquear = obter_portas_afetadas() 
+
+    # Atualiza tudo de uma vez no banco 
+    # conn = get_connection() 
+    # cursor = conn.cursor() 
+    # cursor.execute("""
+    #     UPDATE computadores
+    #     SET inicio = %s, fim = %s, block = 1
+    #     WHERE porta = ANY(%s)
+    # """, (inicio, fim, portas_para_bloquear)) 
+    # conn.commit() 
+    # cursor.close()
+    # conn.close() 
+
+    dt_inicio = datetime.fromisoformat(inicio) 
+    dt_fim = datetime.fromisoformat(fim) 
+    
+    for porta in portas_para_bloquear:
+        cron_manager.remover_tarefa(porta, 'bloquear') 
+        cron_manager.remover_tarefa(porta, 'liberar')
+        cron_manager.agendar_tarefa(dt_inicio, porta, 'bloquear') 
+        cron_manager.agendar_tarefa(dt_fim, porta, 'liberar') 
+
 
 def desbloquear_todas_portas():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE computadores
-        SET inicio = NULL, fim = NULL, block = 0
-        WHERE porta NOT IN (SELECT porta FROM mestres)
-    """)
-    conn.commit()
-    cursor.close()
-    conn.close()
+    portas = obter_portas_afetadas()
+
+    for porta in portas:
+        desbloquear_porta(porta)
+# --- ROTAS FLASK (sem alterações necessárias no corpo das rotas) ---
 
 @app.route('/desbloquear_todos', methods=['GET', 'POST'])
 def desbloquear_todos():
@@ -113,11 +156,11 @@ def bloquear():
         inicio = request.form['inicio']
         fim = request.form['fim']
         bloquear_porta(porta, inicio, fim)
-        return redirect('/')  # Redireciona para a página principal
+        return redirect('/')
     else:
         porta = request.args.get('porta')
         return render_template('bloquear.html', porta=porta)
-    
+
 @app.route('/bloquear_todos', methods=['GET', 'POST'])
 def bloquear_todos():
     if request.method == 'POST':
@@ -130,22 +173,12 @@ def bloquear_todos():
 @app.route('/desbloquear', methods=['POST'])
 def desbloquear():
     porta = request.form['porta']
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE computadores
-        SET inicio = NULL, fim = NULL, block = 0
-        WHERE porta = %s
-    """, (porta,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    desbloquear_porta(porta)
     return redirect('/')
 
 @app.route("/")
 def index():
     ip_cliente = obter_ip_cliente()
-    
     with open("professores.txt") as f:
         ips_permitidos = [linha.strip() for linha in f if linha.strip()]
 
@@ -153,27 +186,16 @@ def index():
         return render_template("proibido.html"), 403
 
     conn = get_connection()
-    query = "SELECT porta, block, inicio, fim FROM computadores ORDER BY porta"
-    computadores = select_query(conn, query)
-    
-    query = "SELECT porta FROM mestres"
-    mestres = select_query(conn, query)
-    
-    agora = datetime.now()
+    computadores = select_query(conn, "SELECT porta, block, inicio, fim FROM computadores ORDER BY porta")
+    mestres = select_query(conn, "SELECT porta FROM mestres")
     conn.close()
     
     return render_template(
         "index.html",
         computadores=computadores,
-        agora=agora,
+        agora=datetime.now(),
         mestres=[m[0] for m in mestres]
     )
 
-
-
 if __name__ == "__main__":
-    processo = Process(target=atualizar_block_periodicamente)
-    processo.daemon = True
-    processo.start()
     app.run(debug=True, host='0.0.0.0')
-
