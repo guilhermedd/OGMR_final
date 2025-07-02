@@ -44,7 +44,8 @@ def executar_comando_imediato(porta, acao, fim=None):
         python_path = os.sys.executable
         script_path = os.path.abspath("gerencia_switch.py")
         
-        comando = [python_path, script_path, str(porta), acao, fim]
+        fim_str = fim if isinstance(fim, str) else fim.strftime("%Y-%m-%d %H:%M")
+        comando = [python_path, script_path, str(porta), acao, fim_str]
         
         print(f"Executando comando imediato: {' '.join(comando)}")
         
@@ -90,8 +91,8 @@ def bloquear_porta(porta, inicio, fim):
 
     # Compara datas
     if dt_inicio < datetime.now():
-        print(f"Comando ja começou? {dt_inicio < datetime.now()} | {dt_inicio} < {datetime.now()}")
-        print(f"Executando bloqueio imediato da porta {porta} para {dt_inicio} e desbloqueio para {dt_fim} | agora {datetime.now()}")
+        # print(f"Comando ja começou? {dt_inicio < datetime.now()} | {dt_inicio} < {datetime.now()}")
+        # print(f"Executando bloqueio imediato da porta {porta} para {dt_inicio} e desbloqueio para {dt_fim} | agora {datetime.now()}")
         executar_comando_imediato(porta, 'bloquear', fim=dt_fim)
     else:
         cron_manager.agendar_tarefa(dt_inicio, porta, 'bloquear', dt_fim)

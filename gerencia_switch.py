@@ -76,6 +76,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 4:
         print("Uso: python gerencia_switch.py <porta> <bloquear|liberar> <fim: 'YYYY-MM-DD HH:MM'>") 
         sys.exit(1) 
+    print("Rodando aogra!", sys.argv)
 
     try:
         porta_arg = int(sys.argv[1]) 
