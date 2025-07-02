@@ -63,10 +63,11 @@ def gerenciar_porta(porta, acao, fim=datetime.now().strftime("%Y-%m-%d %H:%M")):
         "snmpset", "-v2c", "-c", COMMUNITY_WRITE,
         SWITCH_IP, oid_completo, "i", snmp_valor
     ] 
-    atualizar_status_no_banco(porta, acao, fim=fim)
+    
     remover_tarefa(porta, acao)
     print("Executando comando:", " ".join(comando))
     try:
+        atualizar_status_no_banco(porta, acao, fim=fim)
         subprocess.run(comando, check=True, capture_output=True) 
         print(f"SUCESSO: Porta {porta} ação '{acao}' executada.") 
     except subprocess.CalledProcessError as e:

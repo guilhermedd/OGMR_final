@@ -12,7 +12,9 @@ def _get_comment_id(porta, acao):
     """Cria um identificador único para o comentário do job no cron."""
     return f"SWITCH_MGMT_{porta}_{acao.upper()}"
 
-def agendar_tarefa(dt_execucao, porta, acao, fim=datetime.now()):
+def agendar_tarefa(dt_execucao, porta, acao, fim=None):
+    if fim is None:
+        fim = datetime.now()
     """
     Agenda um novo job no crontab do usuário que está executando o Flask.
     
@@ -26,10 +28,13 @@ def agendar_tarefa(dt_execucao, porta, acao, fim=datetime.now()):
     cron = CronTab(user=True)
     comment_id = _get_comment_id(porta, acao)
     
+    data_formatada = fim.strftime("%Y-%m-%d %H:%M")
+    
     # Monta o comando que o cron irá executar
-    comando = f'{PYTHON_PATH} {SCRIPT_PATH} {porta} {acao} {fim}'
+    comando = f'{PYTHON_PATH} {SCRIPT_PATH} {porta} {acao} "{data_formatada}"'
     
     job = cron.new(command=comando, comment=comment_id)
+    print(f"Fazendo agendamento: {comando}")
     
     # Define a data e hora exatas para a execução
     job.minute.on(dt_execucao.minute)
